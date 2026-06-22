@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAS Computer Vision - Deteksi Wajah Realtime</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        p {
+            color: #666;
+            margin-top: 0;
+            margin-bottom: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            border-radius: 12px;
+            overflow: hidden;
+            background-color: #000;
+            width: 640px;
+            height: 480px;
+        }
+
+        /* Video asli disembunyikan karena kita menggambarnya ulang di Canvas */
+        #video {
+            display: none;
+        }
+
+        #canvas {
+            display: block;
+            width: 640px;
+            height: 480px;
+        }
+
+        .status-container {
+            margin-top: 15px;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .status-online { color: #2ecc71; }
+        .status-offline { color: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <h1>Sistem Deteksi Wajah Realtime</h1>
+    <p>Aplikasi Web berbasis API Model untuk Tugas UAS Computer Vision</p>
+
+    <div class="video-container">
+        <video id="video" width="640" height="480" autoplay muted playsinline></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+
+    <div class="status-container">
+        Status API: <span id="status" class="status-offline">Menghubungkan...</span>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+
+        const API_URL = 'http://127.0.0.1:5000/api/detect';
+        let detectedFaces = []; // Menyimpan koordinat wajah dari API
+
+        // 1. Akses Webcam Kamera Laptop
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 },
+                    audio: false
+                });
+                video.srcObject = stream;
+                // Tunggu video selesai memuat metadata baru render
+                video.onloadedmetadata = () => {
+                    video.play();
+                    renderLoop();
+                    startDetectionLoop();
+                };
+            } catch (err) {
+                console.error("Gagal mengakses webcam: ", err);
+                alert("Kamera tidak diizinkan atau tidak ditemukan.");
+            }
+        }
+
+        // 2. Loop Render Utama (Menggambar video dan kotak wajah ke Canvas)
+        function renderLoop() {
+            // Gambar frame video saat ini ke canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Gambar kotak untuk setiap wajah yang terdeteksi
+            ctx.strokeStyle = '#00FF00'; // Warna kotak (Hijau)
+            ctx.lineWidth = 3;           // Ketebalan garis
+            ctx.fillStyle = '#00FF00';
+            ctx.font = '16px Arial';
+
+            detectedFaces.forEach((face, index) => {
+                // Menggambar kotak pembatas wajah
+                ctx.strokeRect(face.x, face.y, face.width, face.height);
+                
+                // Menambahkan label teks di atas kotak
+                ctx.fillText(`Wajah #${index + 1}`, face.x, face.y - 10);
+            });
+
+            // Jalankan terus menerus mengikuti refresh rate layar (smooth)
+            requestAnimationFrame(renderLoop);
+        }
+
+        // 3. Loop Pengiriman Frame ke API Backend (Setiap 200ms / 5 FPS)
+        function startDetectionLoop() {
+            setInterval(async () => {
+                // Kompres gambar ke format JPEG dengan kualitas 70% agar pengiriman cepat
+                const base64Image = canvas.toDataURL('image/jpeg', 0.7);
+
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ image: base64Image })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        detectedFaces = data.faces; // Update koordinat wajah global
+                        
+                        statusEl.innerText = "Terhubung (Lancar)";
+                        statusEl.className = "status-online";
+                    }
+                } catch (error) {
+                    console.error("Gagal menghubungi API:", error);
+                    statusEl.innerText = "Terputus (Pastikan backend Flask berjalan)";
+                    statusEl.className = "status-offline";
+                }
+            }, 200); // 200 milidetik memberikan keseimbangan antara realtime dan beban server
+        }
+
+        // Mulai jalankan aplikasi saat halaman web dibuka
+        setupCamera();
+    </script>
+</body>
+</html>
